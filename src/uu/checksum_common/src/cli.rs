@@ -77,6 +77,8 @@ impl ChecksumCommand for Command {
                 .long(options::LENGTH)
                 .short('l')
                 .help(translate!("ck-common-help-length"))
+                .value_parser(clap::value_parser!(usize))
+                .default_value("0")
                 .action(ArgAction::Set),
         )
     }

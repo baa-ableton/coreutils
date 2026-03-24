@@ -9,6 +9,7 @@ use std::borrow::Borrow;
 use std::ffi::OsString;
 
 use clap::builder::ValueParser;
+use clap::parser::ValueSource;
 use clap::{Arg, ArgAction, ArgMatches, Command, ValueHint};
 
 use uucore::checksum::compute::{
@@ -63,16 +64,16 @@ pub fn standalone_with_length_main(
     algo: AlgoKind,
     cmd: Command,
     args: impl uucore::Args,
-    validate_len: fn(&str) -> UResult<usize>,
+    validate_len: fn(Option<usize>) -> UResult<Option<usize>>,
 ) -> UResult<()> {
     let matches = uucore::clap_localization::handle_clap_result(cmd, args)?;
     let algo = Some(algo);
 
-    let length = matches
-        .get_one::<String>(options::LENGTH)
-        .map(String::as_str)
-        .map(validate_len)
-        .transpose()?;
+    #[allow(clippy::unwrap_used, reason = "LENGTH has default_value(\"0\")")]
+    let raw_length = *matches.get_one::<usize>(options::LENGTH).unwrap();
+    let input_length = (matches.value_source(options::LENGTH) == Some(ValueSource::CommandLine))
+        .then_some(raw_length);
+    let length = validate_len(input_length)?;
 
     //todo: deduplicate matches.get_flag
     let text = !matches.get_flag(options::BINARY);
