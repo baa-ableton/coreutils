@@ -312,7 +312,8 @@ fn test_untagged_algorithm_stdin(#[case] algo: &str) {
 #[test]
 fn test_sha_length_invalid() {
     for algo in ["sha2", "sha3"] {
-        for l in ["0", "00", "13", "56", "99999999999999999999999999"] {
+        // Valid usizes that are invalid lengths for sha2/sha3
+        for l in ["0", "13", "56"] {
             new_ucmd!()
                 .arg("--algorithm")
                 .arg(algo)
@@ -344,8 +345,8 @@ fn test_sha_length_invalid() {
                 ));
         }
 
-        // Different error for NaNs
-        for l in ["512x", "x512", "512x512"] {
+        // "00" is parsed as usize 0 by clap's parser; error reports '0' not '00'
+        for l in ["00"] {
             new_ucmd!()
                 .arg("--algorithm")
                 .arg(algo)
@@ -354,7 +355,11 @@ fn test_sha_length_invalid() {
                 .arg("/dev/null")
                 .fails_with_code(1)
                 .no_stdout()
-                .stderr_contains(format!("invalid length: '{l}'"));
+                .stderr_contains("invalid length: '0'")
+                .stderr_contains(format!(
+                    "digest length for '{}' must be 224, 256, 384, or 512",
+                    algo.to_ascii_uppercase()
+                ));
 
             // Also fails with --check
             new_ucmd!()
@@ -366,7 +371,61 @@ fn test_sha_length_invalid() {
                 .arg("--check")
                 .fails_with_code(1)
                 .no_stdout()
-                .stderr_contains(format!("invalid length: '{l}'"));
+                .stderr_contains("invalid length: '0'")
+                .stderr_contains(format!(
+                    "digest length for '{}' must be 224, 256, 384, or 512",
+                    algo.to_ascii_uppercase()
+                ));
+        }
+
+        // Overflow values: clap's usize parser rejects these before our code runs
+        for l in ["99999999999999999999999999"] {
+            new_ucmd!()
+                .arg("--algorithm")
+                .arg(algo)
+                .arg("--length")
+                .arg(l)
+                .arg("/dev/null")
+                .fails_with_code(1)
+                .no_stdout()
+                .stderr_contains(format!("invalid value '{l}'"));
+
+            // Also fails with --check
+            new_ucmd!()
+                .arg("--algorithm")
+                .arg(algo)
+                .arg("--length")
+                .arg(l)
+                .arg("/dev/null")
+                .arg("--check")
+                .fails_with_code(1)
+                .no_stdout()
+                .stderr_contains(format!("invalid value '{l}'"));
+        }
+
+        // Non-numeric values: clap's usize parser rejects these before our code runs
+        for l in ["512x", "x512", "512x512"] {
+            new_ucmd!()
+                .arg("--algorithm")
+                .arg(algo)
+                .arg("--length")
+                .arg(l)
+                .arg("/dev/null")
+                .fails_with_code(1)
+                .no_stdout()
+                .stderr_contains(format!("invalid value '{l}'"));
+
+            // Also fails with --check
+            new_ucmd!()
+                .arg("--algorithm")
+                .arg(algo)
+                .arg("--length")
+                .arg(l)
+                .arg("/dev/null")
+                .arg("--check")
+                .fails_with_code(1)
+                .no_stdout()
+                .stderr_contains(format!("invalid value '{l}'"));
         }
     }
 }
@@ -656,7 +715,8 @@ fn test_blake2b_length() {
 
 #[test]
 fn test_blake2b_length_greater_than_512() {
-    for l in ["513", "1024", "73786976294838206464"] {
+    // Valid usizes > 512
+    for l in ["513", "1024"] {
         new_ucmd!()
             .arg("--algorithm=blake2b")
             .arg("--length")
@@ -667,10 +727,22 @@ fn test_blake2b_length_greater_than_512() {
             .stderr_contains(format!("invalid length: '{l}'"))
             .stderr_contains("maximum digest length for 'BLAKE2b' is 512 bits");
     }
+    // Overflow: clap's usize parser rejects this before our code runs
+    for l in ["73786976294838206464"] {
+        new_ucmd!()
+            .arg("--algorithm=blake2b")
+            .arg("--length")
+            .arg(l)
+            .arg("lorem_ipsum.txt")
+            .fails_with_code(1)
+            .no_stdout()
+            .stderr_contains(format!("invalid value '{l}'"));
+    }
 }
 
 #[test]
 fn test_blake2b_length_nan() {
+    // Non-numeric values: clap's usize parser rejects these before our code runs
     for l in ["foo", "512x", "x512", "0xff"] {
         new_ucmd!()
             .arg("--algorithm=blake2b")
@@ -679,7 +751,7 @@ fn test_blake2b_length_nan() {
             .arg("lorem_ipsum.txt")
             .fails_with_code(1)
             .no_stdout()
-            .stderr_contains(format!("invalid length: '{l}'"));
+            .stderr_contains(format!("invalid value '{l}'"));
     }
 }
 
@@ -711,19 +783,32 @@ fn test_blake2b_length_repeated() {
 
 #[test]
 fn test_blake2b_length_invalid() {
-    for len in [
-        "1", "01", // Odd
-        "",
-    ] {
-        new_ucmd!()
-            .arg("--length")
-            .arg(len)
-            .arg("--algorithm=blake2b")
-            .arg("lorem_ipsum.txt")
-            .arg("alice_in_wonderland.txt")
-            .fails_with_code(1)
-            .stderr_contains(format!("invalid length: '{len}'"));
-    }
+    // "1" is a valid usize but not a multiple of 8
+    new_ucmd!()
+        .arg("--length=1")
+        .arg("--algorithm=blake2b")
+        .arg("lorem_ipsum.txt")
+        .arg("alice_in_wonderland.txt")
+        .fails_with_code(1)
+        .stderr_contains("invalid length: '1'");
+
+    // "01" is parsed as usize 1 by clap's parser; error reports '1' not '01'
+    new_ucmd!()
+        .arg("--length=01")
+        .arg("--algorithm=blake2b")
+        .arg("lorem_ipsum.txt")
+        .arg("alice_in_wonderland.txt")
+        .fails_with_code(1)
+        .stderr_contains("invalid length: '1'");
+
+    // Empty string: clap's usize parser rejects this
+    new_ucmd!()
+        .arg("--length=")
+        .arg("--algorithm=blake2b")
+        .arg("lorem_ipsum.txt")
+        .arg("alice_in_wonderland.txt")
+        .fails_with_code(1)
+        .stderr_contains("invalid value ''");
 }
 
 #[apply(test_all_algos)]
