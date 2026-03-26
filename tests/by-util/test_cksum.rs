@@ -312,7 +312,7 @@ fn test_untagged_algorithm_stdin(#[case] algo: &str) {
 #[test]
 fn test_sha_length_invalid() {
     for algo in ["sha2", "sha3"] {
-        // Valid usizes that are invalid lengths for sha2/sha3
+        // Valid usize values that are invalid lengths for sha2/sha3
         for l in ["0", "13", "56"] {
             new_ucmd!()
                 .arg("--algorithm")
@@ -715,7 +715,7 @@ fn test_blake2b_length() {
 
 #[test]
 fn test_blake2b_length_greater_than_512() {
-    // Valid usizes > 512
+    // Valid usize values > 512
     for l in ["513", "1024"] {
         new_ucmd!()
             .arg("--algorithm=blake2b")
